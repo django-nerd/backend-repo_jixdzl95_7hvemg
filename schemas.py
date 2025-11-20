@@ -1,48 +1,81 @@
-"""
-Database Schemas
+from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, validator
 
-Define your MongoDB collection schemas here using Pydantic models.
-These schemas are used for data validation in your application.
+# Each class name corresponds to a MongoDB collection with the lowercased name
 
-Each Pydantic model represents a collection in your database.
-Model name is converted to lowercase for the collection name:
-- User -> "user" collection
-- Product -> "product" collection
-- BlogPost -> "blogs" collection
-"""
+GradeLetter = Literal['A','B','C','D','E','F']
 
-from pydantic import BaseModel, Field
-from typing import Optional
+GRADE_POINTS = {
+    'A': 4.0,
+    'B': 3.0,
+    'C': 2.0,
+    'D': 1.0,
+    'E': 0.5,  # some systems use E as 0 or 0.5; we'll allow but treat low
+    'F': 0.0,
+}
 
-# Example schemas (replace with your own):
+HONORS_BANDS = {
+    # JKUAT style classification (approximate; configurable per school):
+    # First Class: >= 70% equivalent, we map to CGPA >= 3.7
+    'First Class Honors': 3.70,
+    'Second Class Upper': 3.30,
+    'Second Class Lower': 2.70,
+    'Pass': 2.00,
+}
 
-class User(BaseModel):
-    """
-    Users collection schema
-    Collection name: "user" (lowercase of class name)
-    """
-    name: str = Field(..., description="Full name")
-    email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+class Course(BaseModel):
+    code: str = Field(..., min_length=2, max_length=16)
+    name: str = Field(..., min_length=2, max_length=64)
+    credit_hours: float = Field(..., gt=0, le=10)
+    grade: Optional[GradeLetter] = None  # if missing, it's planned or in-progress
+    semester: Optional[int] = Field(None, ge=1, le=12)
+    category: Optional[str] = Field(None, description="e.g., core, elective, math, programming")
 
-class Product(BaseModel):
-    """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
-    """
-    title: str = Field(..., description="Product title")
-    description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
-    in_stock: bool = Field(True, description="Whether product is in stock")
+    @validator('code')
+    def normalize_code(cls, v: str) -> str:
+        return v.strip().upper()
 
-# Add your own schemas here:
-# --------------------------------------------------
+class SemesterRecord(BaseModel):
+    term: str  # e.g., "Y2S1" or "2024-1"
+    courses: List[Course]
 
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+class UserProfile(BaseModel):
+    user_id: str
+    name: str
+    program: str
+    target_class: Optional[str] = None  # One of HONORS_BANDS keys
+
+class GPACalcRequest(BaseModel):
+    courses: List[Course]
+
+class CGPACalcRequest(BaseModel):
+    semesters: List[SemesterRecord]
+
+class ProjectionRequest(BaseModel):
+    completed: List[Course] = []
+    remaining_credits: float = Field(..., gt=0)
+    target_class: str
+
+class AdviceRequest(BaseModel):
+    profile: UserProfile
+    semesters: List[SemesterRecord]
+
+class GPACalcResponse(BaseModel):
+    gpa: float
+    total_points: float
+    total_credits: float
+
+class CGPAResponse(BaseModel):
+    cgpa: float
+    gpa_by_semester: List[GPACalcResponse]
+
+class ProjectionResponse(BaseModel):
+    target_class: str
+    target_cgpa: float
+    needed_avg_gpa: float
+    message: str
+
+class AdviceResponse(BaseModel):
+    insights: List[str]
+    recommendations: List[str]
+    risk_courses: List[str]
